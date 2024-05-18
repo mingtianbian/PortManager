@@ -78,6 +78,16 @@ class PortOpener:
                 ports.append(int(part.strip()))
         return ports
 
+def print_help():
+    print("""
+输入以下命令来管理端口:
+- 'add(a) <端口1,端口2,...>' 来增加端口
+- 'remove(r) <端口1,端口2,...>' 来删除端口
+- 'change(c) <端口1,端口2,...>' 来更改端口
+- 'help(h)' 来显示帮助信息
+- 'exit' 来退出
+    """)
+
 def main():
     print("欢迎使用PortManager")
     print("此软件允许您打开和管理端口。")
@@ -92,17 +102,11 @@ def main():
     port_opener = PortOpener(ports)
     port_opener.start_servers()
 
-    print("""
-输入以下命令来管理端口:
-- 'add <端口1,端口2,...>' 来增加端口
-- 'remove <端口1,端口2,...>' 来删除端口
-- 'change <端口1,端口2,...>' 来更改端口
-- 'exit' 来退出
-    """)
+    print_help()
 
     while True:
         cmd = input().strip()
-        if cmd.startswith('change'):
+        if cmd.startswith('change') or cmd.startswith('c'):
             try:
                 ports_input = cmd.split(' ', 1)[1]
                 if ports_input.lower() == 'all':
@@ -112,25 +116,27 @@ def main():
                 port_opener.change_ports(new_ports)
             except (IndexError, ValueError):
                 print("无效的命令或端口号。")
-        elif cmd.startswith('add'):
+        elif cmd.startswith('add') or cmd.startswith('a'):
             try:
                 ports_input = cmd.split(' ', 1)[1]
                 additional_ports = port_opener.parse_ports(ports_input)
                 port_opener.add_ports(additional_ports)
             except (IndexError, ValueError):
                 print("无效的命令或端口号。")
-        elif cmd.startswith('remove'):
+        elif cmd.startswith('remove') or cmd.startswith('r'):
             try:
                 ports_input = cmd.split(' ', 1)[1]
                 remove_ports = port_opener.parse_ports(ports_input)
                 port_opener.remove_ports(remove_ports)
             except (IndexError, ValueError):
                 print("无效的命令或端口号。")
+        elif cmd == 'help' or cmd == 'h':
+            print_help()
         elif cmd == 'exit':
             port_opener.stop_servers()
             break
         else:
-            print("未知命令。")
+            print("未知命令。输入 'help' 或 'h' 查看帮助。")
 
 if __name__ == "__main__":
     main()
