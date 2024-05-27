@@ -1,8 +1,9 @@
 import socket
 import threading
 import logging
-from concurrent.futures import ThreadPoolExecutor
+import re
 
+# 配置日志记录
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class PortOpener:
@@ -10,7 +11,7 @@ class PortOpener:
         self.ports = ports
         self.server_sockets = {}
         self.running = threading.Event()
-        self.executor = ThreadPoolExecutor(max_workers=10)
+        self.threads = []
 
     def start_server(self, port):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -20,10 +21,7 @@ class PortOpener:
             self.server_sockets[port] = server_socket
             logging.info(f"服务器已在端口 {port} 启动")
         except OSError as e:
-            if e.errno == 10048:
-                logging.error(f"端口 {port} 已被占用，请选择其他端口。")
-            else:
-                logging.error(f"无法绑定端口 {port}: {e}")
+            logging.error(f"无法绑定端口 {port}: {e}")
             return
 
         try:
@@ -42,15 +40,21 @@ class PortOpener:
     def start_servers(self):
         self.running.set()
         for port in self.ports:
-            self.executor.submit(self.start_server, port)
+            thread = threading.Thread(target=self.start_server, args=(port,))
+            self.threads.append(thread)
+            thread.start()
+        # 等待所有服务器线程启动完成
+        for thread in self.threads:
+            thread.join(0.1)
 
     def stop_servers(self):
         self.running.clear()
         for port, server_socket in self.server_sockets.items():
             server_socket.close()
-        self.executor.shutdown(wait=True)
+        for thread in self.threads:
+            thread.join()
         self.server_sockets.clear()
-        self.executor = ThreadPoolExecutor(max_workers=10)  # 重新初始化 ThreadPoolExecutor
+        self.threads.clear()
         logging.info("所有服务器已停止")
 
     def change_ports(self, new_ports):
@@ -69,25 +73,16 @@ class PortOpener:
         self.ports = [port for port in self.ports if port not in remove_ports]
         self.start_servers()
 
-    def parse_ports(self, ports_input):
-        ports = []
+    @staticmethod
+    def parse_ports(ports_input):
+        ports = set()
         for part in ports_input.split(','):
-            try:
-                if '-' in part:
-                    start, end = map(int, part.split('-'))
-                    if start > end or start < 1 or end > 65535:
-                        logging.warning(f"无效的端口范围: {part}")
-                        continue
-                    ports.extend(range(start, end + 1))
-                else:
-                    port = int(part.strip())
-                    if port < 1 or port > 65535:
-                        logging.warning(f"无效的端口号: {port}")
-                        continue
-                    ports.append(port)
-            except ValueError:
-                logging.warning(f"无效的端口输入: {part}")
-        return ports
+            if '-' in part:
+                start, end = map(int, part.split('-'))
+                ports.update(range(start, end + 1))
+            else:
+                ports.add(int(part.strip()))
+        return list(ports)
 
 def print_help():
     print("""
@@ -115,35 +110,28 @@ def main():
 
     print_help()
 
+    command_pattern = re.compile(r'^(add|a|remove|r|change|c)\s+(.*)$', re.IGNORECASE)
     while True:
         cmd = input().strip()
-        if cmd.startswith('change') or cmd.startswith('c'):
+        if command_pattern.match(cmd):
+            action, ports_input = command_pattern.findall(cmd)[0]
             try:
-                ports_input = cmd.split(' ', 1)[1]
+                ports_input = ports_input.strip()
                 if ports_input.lower() == 'all':
-                    new_ports = list(range(1, 65536))
+                    ports = list(range(1, 65536))
                 else:
-                    new_ports = port_opener.parse_ports(ports_input)
-                port_opener.change_ports(new_ports)
+                    ports = port_opener.parse_ports(ports_input)
+                if action.lower() in ('change', 'c'):
+                    port_opener.change_ports(ports)
+                elif action.lower() in ('add', 'a'):
+                    port_opener.add_ports(ports)
+                elif action.lower() in ('remove', 'r'):
+                    port_opener.remove_ports(ports)
             except (IndexError, ValueError):
-                logging.warning("无效的命令或端口号。")
-        elif cmd.startswith('add') or cmd.startswith('a'):
-            try:
-                ports_input = cmd.split(' ', 1)[1]
-                additional_ports = port_opener.parse_ports(ports_input)
-                port_opener.add_ports(additional_ports)
-            except (IndexError, ValueError):
-                logging.warning("无效的命令或端口号。")
-        elif cmd.startswith('remove') or cmd.startswith('r'):
-            try:
-                ports_input = cmd.split(' ', 1)[1]
-                remove_ports = port_opener.parse_ports(ports_input)
-                port_opener.remove_ports(remove_ports)
-            except (IndexError, ValueError):
-                logging.warning("无效的命令或端口号。")
-        elif cmd == 'help' or cmd == 'h':
+                logging.error("无效的命令或端口号。")
+        elif cmd.lower() in ('help', 'h'):
             print_help()
-        elif cmd == 'exit':
+        elif cmd.lower() == 'exit':
             port_opener.stop_servers()
             break
         else:
