@@ -3,8 +3,8 @@ import threading
 import logging
 import re
 
-# 配置日志记录
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# 配置日志记录，保存到文件
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filename='port_manager.log', filemode='a')
 
 def get_local_ips():
     ipv4 = []
@@ -31,6 +31,7 @@ class PortOpener:
         self.server_sockets = {}
         self.running = threading.Event()
         self.threads = []
+        self.started_ports = set()
 
     def start_server(self, port, family):
         if family == socket.AF_INET:
@@ -39,6 +40,10 @@ class PortOpener:
         else:
             bind_addr = '::'
             family_label = 'IPv6'
+
+        if (port, family) in self.started_ports:
+            return  # 避免重复启动日志
+        self.started_ports.add((port, family))
 
         server_socket = socket.socket(family, socket.SOCK_STREAM)
         try:
@@ -85,6 +90,7 @@ class PortOpener:
             thread.join()
         self.server_sockets.clear()
         self.threads.clear()
+        self.started_ports.clear()
         logging.info("所有服务器已停止")
 
     def change_ports(self, new_ports):
@@ -120,6 +126,7 @@ def print_help():
 - 'add(a) <端口1,端口2,...>' 来增加端口
 - 'remove(r) <端口1,端口2,...>' 来删除端口
 - 'change(c) <端口1,端口2,...>' 来更改端口
+- 'log(l)' 查看当前日志内容
 - 'help(h)' 来显示帮助信息
 - 'exit' 来退出
     """)
@@ -164,6 +171,22 @@ def main():
                     port_opener.remove_ports(ports)
             except (IndexError, ValueError):
                 logging.error("无效的命令或端口号。")
+        elif cmd.lower() in ('log', 'l'):
+            try:
+                with open('port_manager.log', 'rb') as f:
+                    content = f.read()
+                    try:
+                        decoded = content.decode('utf-8')
+                        print("\n==== 日志内容 ====")
+                        print(decoded)
+                        print("==== 日志结束 ====")
+                    except UnicodeDecodeError:
+                        decoded = content.decode('gbk', errors='replace')
+                        print("\n==== 日志内容 (非UTF-8，尝试按本地编码解码) ====")
+                        print(decoded)
+                        print("==== 日志结束 ====")
+            except FileNotFoundError:
+                print("当前没有日志文件。")
         elif cmd.lower() in ('help', 'h'):
             print_help()
         elif cmd.lower() == 'exit':

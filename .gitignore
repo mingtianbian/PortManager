@@ -1,0 +1,36 @@
+# Python 缓存和编译文件
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# 日志文件
+*.log
+port_manager.log
+
+# 虚拟环境文件夹
+venv/
+.env/
+
+# IDE 和编辑器配置
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 单元测试覆盖率文件
+.coverage
+htmlcov/
+
+# 构建产物
+dist/
+build/
+*.egg-info/
+
+# 其他临时文件
+*.bak
+*.tmp
