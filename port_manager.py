@@ -6,6 +6,25 @@ import re
 # 配置日志记录
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+def get_local_ips():
+    ipv4 = []
+    ipv6 = []
+    hostname = socket.gethostname()
+    try:
+        for info in socket.getaddrinfo(hostname, None):
+            family, _, _, _, sockaddr = info
+            if family == socket.AF_INET:
+                ip = sockaddr[0]
+                if ip not in ipv4:
+                    ipv4.append(ip)
+            elif family == socket.AF_INET6:
+                ip = sockaddr[0]
+                if ip not in ipv6:
+                    ipv6.append(ip)
+    except Exception as e:
+        logging.error(f"获取本地IP地址时出错: {e}")
+    return ipv4, ipv6
+
 class PortOpener:
     def __init__(self, ports):
         self.ports = ports
@@ -13,15 +32,22 @@ class PortOpener:
         self.running = threading.Event()
         self.threads = []
 
-    def start_server(self, port):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    def start_server(self, port, family):
+        if family == socket.AF_INET:
+            bind_addr = '0.0.0.0'
+            family_label = 'IPv4'
+        else:
+            bind_addr = '::'
+            family_label = 'IPv6'
+
+        server_socket = socket.socket(family, socket.SOCK_STREAM)
         try:
-            server_socket.bind(('0.0.0.0', port))
+            server_socket.bind((bind_addr, port))
             server_socket.listen(5)
-            self.server_sockets[port] = server_socket
-            logging.info(f"服务器已在端口 {port} 启动")
+            self.server_sockets[(port, family)] = server_socket
+            logging.info(f"服务器已在端口 {port} ({family_label}) 启动")
         except OSError as e:
-            logging.error(f"无法绑定端口 {port}: {e}")
+            logging.error(f"无法绑定端口 {port} ({family_label}): {e}")
             return
 
         try:
@@ -29,27 +55,31 @@ class PortOpener:
                 server_socket.settimeout(1.0)
                 try:
                     client_socket, addr = server_socket.accept()
-                    logging.info(f"来自 {addr} 的连接到端口 {port}")
-                    client_socket.sendall("服务器的问候!\n".encode('utf-8'))
+                    logging.info(f"来自 {addr} 的连接到端口 {port} ({family_label})")
+                    client_socket.sendall(f"服务器的问候! 你连接的是 {family_label} 服务\n".encode('utf-8'))
                     client_socket.close()
                 except socket.timeout:
                     continue
         except Exception as e:
-            logging.error(f"服务器错误在端口 {port}: {e}")
+            logging.error(f"服务器错误在端口 {port} ({family_label}): {e}")
 
     def start_servers(self):
         self.running.set()
         for port in self.ports:
-            thread = threading.Thread(target=self.start_server, args=(port,))
-            self.threads.append(thread)
-            thread.start()
-        # 等待所有服务器线程启动完成
+            thread_ipv4 = threading.Thread(target=self.start_server, args=(port, socket.AF_INET))
+            self.threads.append(thread_ipv4)
+            thread_ipv4.start()
+
+            thread_ipv6 = threading.Thread(target=self.start_server, args=(port, socket.AF_INET6))
+            self.threads.append(thread_ipv6)
+            thread_ipv6.start()
+
         for thread in self.threads:
             thread.join(0.1)
 
     def stop_servers(self):
         self.running.clear()
-        for port, server_socket in self.server_sockets.items():
+        for (port, family), server_socket in self.server_sockets.items():
             server_socket.close()
         for thread in self.threads:
             thread.join()
@@ -65,7 +95,7 @@ class PortOpener:
     def add_ports(self, additional_ports):
         self.stop_servers()
         self.ports.extend(additional_ports)
-        self.ports = list(set(self.ports))  # 去重
+        self.ports = list(set(self.ports))
         self.start_servers()
 
     def remove_ports(self, remove_ports):
@@ -95,8 +125,13 @@ def print_help():
     """)
 
 def main():
-    print("欢迎使用PortManager")
+    print("欢迎使用PortManager (支持IPv4和IPv6) v1.3.0")
     print("此软件允许您打开和管理端口。")
+
+    ipv4_list, ipv6_list = get_local_ips()
+    print("本机 IPv4 地址:", ", ".join(ipv4_list) if ipv4_list else "无")
+    print("本机 IPv6 地址:", ", ".join(ipv6_list) if ipv6_list else "无")
+
     ports_input = input("请输入要开放的端口（用逗号分隔，或输入 'all' 开放所有端口）: ")
 
     if ports_input.lower() == 'all':
@@ -104,7 +139,7 @@ def main():
     else:
         port_opener = PortOpener([])
         ports = port_opener.parse_ports(ports_input)
-    
+
     port_opener = PortOpener(ports)
     port_opener.start_servers()
 
