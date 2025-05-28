@@ -41,10 +41,6 @@ class PortOpener:
             bind_addr = '::'
             family_label = 'IPv6'
 
-        if (port, family) in self.started_ports:
-            return  # 避免重复启动日志
-        self.started_ports.add((port, family))
-
         server_socket = socket.socket(family, socket.SOCK_STREAM)
         try:
             server_socket.bind((bind_addr, port))
@@ -99,14 +95,14 @@ class PortOpener:
         self.start_servers()
 
     def add_ports(self, additional_ports):
-        self.stop_servers()
         self.ports.extend(additional_ports)
         self.ports = list(set(self.ports))
+        self.stop_servers()
         self.start_servers()
 
     def remove_ports(self, remove_ports):
-        self.stop_servers()
         self.ports = [port for port in self.ports if port not in remove_ports]
+        self.stop_servers()
         self.start_servers()
 
     @staticmethod
@@ -132,7 +128,7 @@ def print_help():
     """)
 
 def main():
-    print("欢迎使用PortManager (支持IPv4和IPv6) v1.3.0")
+    print("欢迎使用PortManager (支持IPv4和IPv6) v1.3.2")
     print("此软件允许您打开和管理端口。")
 
     ipv4_list, ipv6_list = get_local_ips()
@@ -144,33 +140,31 @@ def main():
     if ports_input.lower() == 'all':
         ports = list(range(1, 65536))
     else:
-        port_opener = PortOpener([])
-        ports = port_opener.parse_ports(ports_input)
+        ports = PortOpener.parse_ports(ports_input)
 
     port_opener = PortOpener(ports)
     port_opener.start_servers()
 
     print_help()
 
-    command_pattern = re.compile(r'^(add|a|remove|r|change|c)\s+(.*)$', re.IGNORECASE)
     while True:
         cmd = input().strip()
-        if command_pattern.match(cmd):
-            action, ports_input = command_pattern.findall(cmd)[0]
-            try:
-                ports_input = ports_input.strip()
-                if ports_input.lower() == 'all':
-                    ports = list(range(1, 65536))
-                else:
-                    ports = port_opener.parse_ports(ports_input)
-                if action.lower() in ('change', 'c'):
-                    port_opener.change_ports(ports)
-                elif action.lower() in ('add', 'a'):
-                    port_opener.add_ports(ports)
-                elif action.lower() in ('remove', 'r'):
-                    port_opener.remove_ports(ports)
-            except (IndexError, ValueError):
-                logging.error("无效的命令或端口号。")
+        if cmd.lower() in ('add', 'a', 'remove', 'r', 'change', 'c'):
+            print("请提供端口参数，例如: add 80")
+            continue
+
+        if cmd.lower().startswith(('add ', 'a ')):
+            _, ports_input = cmd.split(' ', 1)
+            ports = PortOpener.parse_ports(ports_input)
+            port_opener.add_ports(ports)
+        elif cmd.lower().startswith(('remove ', 'r ')):
+            _, ports_input = cmd.split(' ', 1)
+            ports = PortOpener.parse_ports(ports_input)
+            port_opener.remove_ports(ports)
+        elif cmd.lower().startswith(('change ', 'c ')):
+            _, ports_input = cmd.split(' ', 1)
+            ports = PortOpener.parse_ports(ports_input)
+            port_opener.change_ports(ports)
         elif cmd.lower() in ('log', 'l'):
             try:
                 with open('port_manager.log', 'rb') as f:
@@ -193,7 +187,7 @@ def main():
             port_opener.stop_servers()
             break
         else:
-            logging.warning("未知命令。输入 'help' 或 'h' 查看帮助。")
+            print("未知命令。输入 'help' 或 'h' 查看帮助。")
 
 if __name__ == "__main__":
     main()
